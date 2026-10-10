@@ -32,6 +32,24 @@ const histories = new Map<string, number[]>();
 
 const keyOf = (d: DeviceSpec) => `${d.host}#${d.channel}`;
 
+function loadHistory(key: string): number[] {
+  try {
+    const raw = window.localStorage.getItem(`hs-shelly-hist:${key}`);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'number').slice(-HISTORY_POINTS) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveHistory(key: string, values: number[]) {
+  try {
+    window.localStorage.setItem(`hs-shelly-hist:${key}`, JSON.stringify(values));
+  } catch {
+    // ohne localStorage geht der Verlauf beim Neuladen verloren
+  }
+}
+
 async function readDevice(spec: DeviceSpec, cacheMs: number): Promise<Reading> {
   const pluginFetch = window.__HS_SDK__?.pluginFetch as PluginFetch | undefined;
   if (!pluginFetch) throw new Error('SDK nicht verfügbar');
@@ -94,7 +112,9 @@ function usePower(devices: DeviceSpec[], refreshMs: number): State {
         const key = keyOf(specs[i]);
         if (r.status === 'fulfilled') {
           readings[key] = r.value;
-          histories.set(key, pushHistory(histories.get(key) ?? [], r.value.watts, HISTORY_POINTS));
+          const next = pushHistory(histories.get(key) ?? loadHistory(key), r.value.watts, HISTORY_POINTS);
+          histories.set(key, next);
+          if (i === 0) saveHistory(key, next);
         } else {
           readings[key] = null;
         }
@@ -128,8 +148,14 @@ function usePower(devices: DeviceSpec[], refreshMs: number): State {
 function Spark({ values, color }: { values: number[]; color: string }) {
   const W = 400;
   const H = 100;
-  const paths = sparkPaths(values, W, H);
-  if (!paths) return null;
+  const paths = values.length >= 6 ? sparkPaths(values, W, H) : null;
+  if (!paths) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', fontSize: '0.7em', opacity: 0.45 }}>
+        Verlauf wird aufgebaut …
+      </div>
+    );
+  }
   return (
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%', display: 'block' }}>
       <defs>
@@ -202,7 +228,7 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
           <div style={{ fontSize: '3em', fontWeight: 300, lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
             {mainReading ? formatPower(mainReading.watts) : loaded ? '–' : '…'}
           </div>
-          {state.today && (
+          {state.today && (state.today.since === null || Date.now() - state.today.since >= 30 * 60 * 1000) && (
             <div style={{ fontSize: '0.85em', opacity: 0.75, marginTop: '0.2em' }}>
               {state.today.since === null
                 ? 'Heute '

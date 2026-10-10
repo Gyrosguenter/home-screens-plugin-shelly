@@ -1,7 +1,7 @@
 {
   "id": "shelly-power",
   "name": "Stromverbrauch (Shelly)",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Aktueller Stromverbrauch der Wohnung aus Shelly-Messgeräten im lokalen Netz: Gesamtleistung mit Verlauf, Tagesverbrauch und Einzelverbraucher",
   "author": "Gyrosguenter",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "hs-plugin-shelly-power",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Home Screens plugin: Shelly power meters",
   "license": "MIT",
   "scripts": {
