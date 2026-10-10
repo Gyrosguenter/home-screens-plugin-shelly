@@ -162,3 +162,43 @@ export function pruneStore(store: DayStore, now: Date): DayStore {
     Object.fromEntries(Object.entries(rec).filter(([k]) => k >= cutoff)) as Record<string, T>;
   return { counters: keep(store.counters), days: keep(store.days) };
 }
+
+export interface PeriodStarts {
+  day: number;
+  week: number;
+  month: number;
+  year: number;
+}
+
+/** Beginn der Zeiträume in ms — nie vor dem ersten Messwert, damit anteilige
+ *  Grundgebühren nur für den Zeitraum berechnet werden, den es auch gibt. */
+export function periodStarts(now: Date, p: Periods): PeriodStarts {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dow = (now.getDay() + 6) % 7;
+  const monday = addDays(midnight, -dow);
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const firstOfYear = new Date(now.getFullYear(), 0, 1);
+  const earliest = Math.max(
+    p.dataSince ? p.dataSince.getTime() : firstOfYear.getTime(),
+    firstOfYear.getTime(),
+  );
+  const clamp = (t: number) => Math.min(now.getTime(), Math.max(t, earliest));
+  return {
+    day: Math.min(now.getTime(), p.todaySince ?? midnight.getTime()),
+    week: clamp(monday.getTime()),
+    month: clamp(firstOfMonth.getTime()),
+    year: clamp(firstOfYear.getTime()),
+  };
+}
+
+/** Kosten eines Zeitraums: Arbeitspreis mal Verbrauch plus anteiliger Grundpreis. */
+export function costOf(wh: number, pricePerKwh: number, baseFeePerYear: number, elapsedMs: number): number {
+  return (wh / 1000) * pricePerKwh + (baseFeePerYear * Math.max(0, elapsedMs)) / (365 * 86400000);
+}
+
+/** "1,37 €" bzw. ab 100 € ohne Nachkommastellen ("856 €"). */
+export function formatEuro(amount: number): string {
+  const v = Math.max(0, amount);
+  const text = v >= 100 ? Math.round(v).toString() : v.toFixed(2).replace('.', ',');
+  return `${text.replace(/\B(?=(\d{3})+(?!\d))/g, '.')} €`;
+}

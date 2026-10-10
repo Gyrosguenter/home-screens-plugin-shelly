@@ -1,7 +1,7 @@
 {
   "id": "shelly-power",
   "name": "Stromverbrauch (Shelly)",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Stromverbrauch der Wohnung aus Shelly-Geräten im lokalen Netz: aktuelle Leistung mit Verlauf, Verbrauch heute/Woche/Monat/Jahr (aus dem Speicher des Shelly EM), Einzelverbraucher und Schaltzustand von Shellys ohne Messung",
   "author": "Gyrosguenter",
   "license": "MIT",
@@ -15,7 +15,8 @@
     "refreshIntervalMs": 10000,
     "showPeriods": true,
     "pricePerKwh": 0,
-    "historySeed": ""
+    "historySeed": "",
+    "baseFeePerYear": 0
   },
   "defaultSize": {
     "w": 440,
@@ -51,12 +52,22 @@
       },
       "pricePerKwh": {
         "type": "number",
-        "title": "Strompreis (€ je kWh)",
-        "description": "Optional, z. B. 0.32. Zeigt unter den Verbrauchswerten eine grobe Kostenschätzung. 0 = keine Kosten zeigen.",
+        "title": "Arbeitspreis (€ je kWh, brutto)",
+        "description": "Preis je kWh laut Stromrechnung, z. B. 0.3244. Zeigt hinter den Verbrauchswerten die Kosten in Klammern. 0 = keine Kosten zeigen.",
         "minimum": 0,
         "maximum": 2,
         "ui:widget": "text",
         "ui:placeholder": "0.32",
+        "ui:group": "Anzeige"
+      },
+      "baseFeePerYear": {
+        "type": "number",
+        "title": "Grundpreis (€ je Jahr, optional)",
+        "description": "Jährlicher Grundpreis laut Rechnung, z. B. 149.70. Wird anteilig auf die Zeiträume umgelegt. 0 = nicht einrechnen.",
+        "minimum": 0,
+        "maximum": 1000,
+        "ui:widget": "text",
+        "ui:placeholder": "149.70",
         "ui:group": "Anzeige"
       },
       "refreshIntervalMs": {

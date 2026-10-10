@@ -15,7 +15,10 @@ import {
 } from './power-logic';
 import {
   EMPTY_STORE,
+  costOf,
+  formatEuro,
   mergeStores,
+  periodStarts,
   parseSeed,
   periodsFrom,
   pruneStore,
@@ -177,14 +180,14 @@ function usePower(devices: DeviceSpec[], refreshMs: number, seedText: string): S
 
 const WEEKDAYS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 
-function PeriodTile({ label, wh, price }: { label: string; wh: number; price: number }) {
+function PeriodTile({ label, wh, cost }: { label: string; wh: number; cost: number | null }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1em', minWidth: 0 }}>
       <span style={{ fontSize: '0.7em', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-      <span style={{ fontSize: '1.1em', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{formatKwhDe(wh)}</span>
-      {price > 0 && (
-        <span style={{ fontSize: '0.7em', opacity: 0.6 }}>{`ca. ${((wh / 1000) * price).toFixed(2).replace('.', ',')} €`}</span>
-      )}
+      <span style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '1.1em', fontWeight: 600 }}>{formatKwhDe(wh)}</span>
+        {cost !== null && <span style={{ fontSize: '0.8em', opacity: 0.7 }}>{` (${formatEuro(cost)})`}</span>}
+      </span>
     </div>
   );
 }
@@ -270,9 +273,16 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
   const title = typeof config.title === 'string' ? config.title.trim() : 'Strom';
   const seedText = typeof config.historySeed === 'string' ? config.historySeed : '';
   const state = usePower(devices, refreshMs, seedText);
-  const price = Math.max(0, Number(config.pricePerKwh) || 0);
+  const price = Math.max(0, Number(String(config.pricePerKwh ?? '').replace(',', '.')) || 0);
+  const baseFee = Math.max(0, Number(String(config.baseFeePerYear ?? '').replace(',', '.')) || 0);
   const showPeriods = config.showPeriods !== false;
   const periods = showPeriods ? state.periods : null;
+  const costFor = (wh: number, which: 'day' | 'week' | 'month' | 'year'): number | null => {
+    if (!periods || (price <= 0 && baseFee <= 0)) return null;
+    const nowDate = new Date();
+    const start = periodStarts(nowDate, periods)[which];
+    return costOf(wh, price, baseFee, nowDate.getTime() - start);
+  };
 
   const main = devices[0];
   const others = devices.slice(1);
@@ -318,10 +328,10 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
                     : `Heute · seit ${new Date(periods.todaySince).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`
                 }
                 wh={periods.day}
-                price={price}
+                cost={costFor(periods.day, 'day')}
               />
-              <PeriodTile label="Woche" wh={periods.week} price={price} />
-              <PeriodTile label="Monat" wh={periods.month} price={price} />
+              <PeriodTile label="Woche" wh={periods.week} cost={costFor(periods.week, 'week')} />
+              <PeriodTile label="Monat" wh={periods.month} cost={costFor(periods.month, 'month')} />
               <PeriodTile
                 label={
                   periods.dataSince === null
@@ -329,7 +339,7 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
                     : `Jahr · seit ${periods.dataSince.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`
                 }
                 wh={periods.year}
-                price={price}
+                cost={costFor(periods.year, 'year')}
               />
             </div>
           )}

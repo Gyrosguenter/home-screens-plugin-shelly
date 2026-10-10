@@ -87,3 +87,29 @@ describe('parseSeed/mergeStores', () => {
     expect(mergeStores(own, seed).counters['2026-10-14'].wh).toBe(10050);
   });
 });
+
+import { costOf, formatEuro, periodStarts } from './energy-days';
+
+describe('Kosten', () => {
+  it('Arbeitspreis plus anteiliger Grundpreis', () => {
+    // 10 kWh * 0,30 € + 36,5 € Jahresgrundpreis für 10 Tage = 3,00 + 1,00
+    expect(costOf(10000, 0.3, 36.5, 10 * 86400000)).toBeCloseTo(4.0, 5);
+    expect(costOf(1000, 0, 0, 1000)).toBe(0);
+  });
+
+  it('Euro-Format deutsch', () => {
+    expect(formatEuro(1.374)).toBe('1,37 €');
+    expect(formatEuro(856.4)).toBe('856 €');
+    expect(formatEuro(1234.5)).toBe('1.235 €');
+  });
+
+  it('Zeitraumbeginn nie vor dem ersten Messwert', () => {
+    const now = new Date(2026, 9, 14, 12, 0);
+    const first = new Date(2026, 9, 13, 0, 0);
+    const starts = periodStarts(now, {
+      day: 0, week: 0, month: 0, year: 0, last7: [], todaySince: null, dataSince: first,
+    });
+    expect(starts.week).toBe(first.getTime()); // Montag war der 12.10. - Daten erst ab 13.10.
+    expect(starts.day).toBe(new Date(2026, 9, 14).getTime());
+  });
+});
