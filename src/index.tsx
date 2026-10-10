@@ -3,19 +3,26 @@ import type { PluginComponentProps } from './hs-plugin';
 import { hostFrameStyle } from './host-style';
 import {
   gen1HasMeter,
-  formatKwh,
+  formatKwhDe,
   formatPower,
   parseDevices,
   parseGeneration,
   parseStatus,
   pushHistory,
-  pushSnapshot,
   sparkPaths,
-  todayUsage,
   type DeviceSpec,
   type Reading,
-  type Snapshot,
 } from './power-logic';
+import {
+  EMPTY_STORE,
+  mergeStores,
+  parseSeed,
+  periodsFrom,
+  pruneStore,
+  recordCounter,
+  type DayStore,
+  type Periods,
+} from './energy-days';
 
 const PLUGIN_ID = 'shelly-power';
 const DEFAULT_REFRESH_MS = 10000;
@@ -28,7 +35,7 @@ type PluginFetch = (
 ) => Promise<Response>;
 
 // Modulweit: übersteht Screenwechsel (das Modul wird dabei neu eingehängt).
-const generations = new Map<string, { gen: number; hasMeter: boolean }>();
+const generations = new Map<string, { gen: number; hasMeter: boolean; emeters: boolean }>();
 /** Geräte, die schon einmal ohne Leistungsmessung geantwortet haben — damit
  *  sie auch bei einem Ausfall unter "Schalter" bleiben statt zwischen den Messwerten. */
 const switchOnly = new Set<string>();
@@ -54,18 +61,25 @@ function saveHistory(key: string, values: number[]) {
   }
 }
 
-async function readDevice(spec: DeviceSpec, cacheMs: number): Promise<Reading> {
+async function deviceInfo(spec: DeviceSpec): Promise<{ gen: number; hasMeter: boolean; emeters: boolean }> {
   const pluginFetch = window.__HS_SDK__?.pluginFetch as PluginFetch | undefined;
   if (!pluginFetch) throw new Error('SDK nicht verfügbar');
-
   let known = generations.get(spec.host);
   if (known === undefined) {
     const info = await pluginFetch(PLUGIN_ID, { url: `http://${spec.host}/shelly`, cacheTtlMs: 60 * 60 * 1000 });
     if (!info.ok) throw new Error(`HTTP ${info.status}`);
     const body = await info.json();
-    known = { gen: parseGeneration(body), hasMeter: gen1HasMeter(body) };
+    const emeters = ((body as { num_emeters?: number } | null)?.num_emeters ?? 0) > 0;
+    known = { gen: parseGeneration(body), hasMeter: gen1HasMeter(body), emeters };
     generations.set(spec.host, known);
   }
+  return known;
+}
+
+async function readDevice(spec: DeviceSpec, cacheMs: number): Promise<Reading> {
+  const pluginFetch = window.__HS_SDK__?.pluginFetch as PluginFetch | undefined;
+  if (!pluginFetch) throw new Error('SDK nicht verfügbar');
+  const known = await deviceInfo(spec);
   const url = known.gen >= 2 ? `http://${spec.host}/rpc/Shelly.GetStatus` : `http://${spec.host}/status`;
   const res = await pluginFetch(PLUGIN_ID, { url, cacheTtlMs: cacheMs });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -74,33 +88,38 @@ async function readDevice(spec: DeviceSpec, cacheMs: number): Promise<Reading> {
   return reading;
 }
 
-function loadSnapshots(key: string): Snapshot[] {
+function loadStore(key: string): DayStore {
   try {
-    const raw = window.localStorage.getItem(`hs-shelly-snap:${key}`);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed.filter((s) => s && typeof s.t === 'number' && typeof s.wh === 'number') : [];
+    const raw = window.localStorage.getItem(`hs-shelly-days:${key}`);
+    const parsed = raw ? (JSON.parse(raw) as Partial<DayStore>) : null;
+    if (parsed && typeof parsed === 'object') {
+      return { counters: parsed.counters ?? {}, days: parsed.days ?? {} };
+    }
   } catch {
-    return [];
+    // unlesbar: von vorn beginnen
   }
+  return EMPTY_STORE;
 }
 
-function saveSnapshots(key: string, list: Snapshot[]) {
+function saveStore(key: string, store: DayStore) {
   try {
-    window.localStorage.setItem(`hs-shelly-snap:${key}`, JSON.stringify(list));
+    window.localStorage.setItem(`hs-shelly-days:${key}`, JSON.stringify(store));
   } catch {
-    // localStorage nicht verfügbar: Tagesverbrauch zeigt dann nur die Sitzung.
+    // Speicher voll/nicht verfügbar: Werte gelten dann nur bis zum Neuladen
   }
 }
 
 interface State {
   readings: Record<string, Reading | null>;
   history: Record<string, number[]>;
-  today: ReturnType<typeof todayUsage>;
+  periods: Periods | null;
   updatedAt: number | null;
 }
 
-function usePower(devices: DeviceSpec[], refreshMs: number): State {
-  const [state, setState] = React.useState<State>({ readings: {}, history: {}, today: null, updatedAt: null });
+function usePower(devices: DeviceSpec[], refreshMs: number, seedText: string): State {
+  const [state, setState] = React.useState<State>({ readings: {}, history: {}, periods: null, updatedAt: null });
+  const seedRef = React.useRef(seedText);
+  seedRef.current = seedText;
   const listKey = devices.map(keyOf).join(',');
 
   React.useEffect(() => {
@@ -131,16 +150,17 @@ function usePower(devices: DeviceSpec[], refreshMs: number): State {
         history[key] = histories.get(key) ?? [];
       });
 
-      let today: State['today'] = null;
+      let periods: Periods | null = null;
       const main = specs[0];
       const mainReading = main ? readings[keyOf(main)] : null;
       if (main && mainReading && mainReading.totalWh !== null) {
         const key = keyOf(main);
-        const snaps = pushSnapshot(loadSnapshots(key), now, mainReading.totalWh);
-        saveSnapshots(key, snaps);
-        today = todayUsage(snaps, now, mainReading.totalWh);
+        const nowDate = new Date(now);
+        const own = pruneStore(recordCounter(loadStore(key), nowDate, mainReading.totalWh), nowDate);
+        saveStore(key, own);
+        periods = periodsFrom(mergeStores(own, parseSeed(seedRef.current)), nowDate, mainReading.totalWh);
       }
-      setState({ readings, history, today, updatedAt: now });
+      setState({ readings, history, periods, updatedAt: now });
     }
 
     poll();
@@ -153,6 +173,42 @@ function usePower(devices: DeviceSpec[], refreshMs: number): State {
   }, [listKey, refreshMs]);
 
   return state;
+}
+
+const WEEKDAYS_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+function PeriodTile({ label, wh, price }: { label: string; wh: number; price: number }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1em', minWidth: 0 }}>
+      <span style={{ fontSize: '0.7em', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+      <span style={{ fontSize: '1.1em', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{formatKwhDe(wh)}</span>
+      {price > 0 && (
+        <span style={{ fontSize: '0.7em', opacity: 0.6 }}>{`ca. ${((wh / 1000) * price).toFixed(2).replace('.', ',')} €`}</span>
+      )}
+    </div>
+  );
+}
+
+function DayBars({ days, color }: { days: Periods['last7']; color: string }) {
+  const max = Math.max(1, ...days.map((d) => d.wh ?? 0));
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.35em', height: '4.6em' }}>
+      {days.map((d, i) => (
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: '0.2em' }}>
+          <div style={{ fontSize: '0.55em', opacity: 0.7, fontVariantNumeric: 'tabular-nums' }}>{d.wh === null ? '–' : (d.wh / 1000).toFixed(1).replace('.', ',')}</div>
+          <div
+            style={{
+              width: '100%',
+              height: `${Math.max(3, ((d.wh ?? 0) / max) * 100 * 0.6)}%`,
+              background: i === days.length - 1 ? color : 'rgba(255,255,255,0.28)',
+              borderRadius: '0.2em 0.2em 0 0',
+            }}
+          />
+          <div style={{ fontSize: '0.6em', opacity: i === days.length - 1 ? 1 : 0.6 }}>{WEEKDAYS_DE[d.date.getDay()]}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function Spark({ values, color }: { values: number[]; color: string }) {
@@ -212,7 +268,11 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
   );
   const refreshMs = Math.max(5000, Number(config.refreshIntervalMs) || DEFAULT_REFRESH_MS);
   const title = typeof config.title === 'string' ? config.title.trim() : 'Strom';
-  const state = usePower(devices, refreshMs);
+  const seedText = typeof config.historySeed === 'string' ? config.historySeed : '';
+  const state = usePower(devices, refreshMs, seedText);
+  const price = Math.max(0, Number(config.pricePerKwh) || 0);
+  const showPeriods = config.showPeriods !== false;
+  const periods = showPeriods ? state.periods : null;
 
   const main = devices[0];
   const others = devices.slice(1);
@@ -242,20 +302,52 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
           <div style={{ fontSize: '3em', fontWeight: 300, lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
             {mainWatts !== null ? formatPower(mainWatts) : loaded ? '–' : '…'}
           </div>
-          {state.today && (state.today.since === null || Date.now() - state.today.since >= 30 * 60 * 1000) && (
-            <div style={{ fontSize: '0.85em', opacity: 0.75, marginTop: '0.2em' }}>
-              {state.today.since === null
-                ? 'Heute '
-                : `Seit ${new Date(state.today.since).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} `}
-              <strong>{formatKwh(state.today.wh)}</strong>
+          {periods && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '0.7em 1em',
+                marginTop: '0.7em',
+              }}
+            >
+              <PeriodTile
+                label={
+                  periods.todaySince === null
+                    ? 'Heute'
+                    : `Heute · seit ${new Date(periods.todaySince).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`
+                }
+                wh={periods.day}
+                price={price}
+              />
+              <PeriodTile label="Woche" wh={periods.week} price={price} />
+              <PeriodTile label="Monat" wh={periods.month} price={price} />
+              <PeriodTile
+                label={
+                  periods.dataSince === null
+                    ? 'Jahr'
+                    : `Jahr · seit ${periods.dataSince.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })}`
+                }
+                wh={periods.year}
+                price={price}
+              />
             </div>
           )}
         </div>
       )}
 
       {main && (
-        <div style={{ flex: '1 1 0', minHeight: '4em', maxHeight: '9em' }}>
+        <div style={{ flex: '1 1 0', minHeight: '3.5em', maxHeight: '7em' }}>
           <Spark values={state.history[keyOf(main)] ?? []} color={accent} />
+        </div>
+      )}
+
+      {periods && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3em' }}>
+          <span style={{ fontSize: '0.7em', opacity: 0.6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Letzte 7 Tage (kWh)
+          </span>
+          <DayBars days={periods.last7} color={accent} />
         </div>
       )}
 

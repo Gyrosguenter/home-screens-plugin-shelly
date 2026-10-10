@@ -108,3 +108,29 @@ describe('Verlauf', () => {
     expect(p?.area.endsWith('Z')).toBe(true);
   });
 });
+
+import { formatKwhDe, parseEmCsv } from './power-logic';
+
+describe('Verbrauchs-Historie (em_data.csv)', () => {
+  const csv = [
+    'Date/time UTC,Active energy Wh (2),Returned energy Wh (2),Min V,Max V',
+    '2026-02-10 00:00,36.80,0.00,236.5,236.5',
+    '2026-02-10 00:10,31.40,0.00,236.5,238.0',
+    'kaputt,zeile',
+    '2026-02-10 00:20,40.10,0.00,236.5,238.0',
+  ].join('\n');
+
+  it('liest 10-Minuten-Fenster und überspringt Müll', () => {
+    const r = parseEmCsv(csv);
+    expect(r).toHaveLength(3);
+    expect(r[0]).toEqual({ t: Date.UTC(2026, 1, 10, 0, 0), wh: 36.8 });
+    expect(r[2].wh).toBe(40.1);
+  });
+
+  it('Formatierung deutsch mit Tausenderpunkt', () => {
+    expect(formatKwhDe(4210)).toBe('4,21 kWh');
+    expect(formatKwhDe(31520)).toBe('31,5 kWh');
+    expect(formatKwhDe(128400)).toBe('128 kWh');
+    expect(formatKwhDe(1234000)).toBe('1.234 kWh');
+  });
+});

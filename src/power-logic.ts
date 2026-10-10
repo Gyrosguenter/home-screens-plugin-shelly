@@ -187,3 +187,36 @@ export function sparkPaths(values: number[], w: number, h: number): { line: stri
   const line = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
   return { line, area: `${line} L${w},${h} L0,${h} Z` };
 }
+
+// ─── Verbrauch je Zeitraum aus den gespeicherten Gerätedaten (Shelly EM Gen1) ──
+
+/** Ein Eintrag der Verbrauchshistorie: Beginn des Zeitfensters (UTC, ms) und
+ *  die in diesem Fenster verbrauchte Energie in Wattstunden. */
+export interface EnergyRecord {
+  t: number;
+  wh: number;
+}
+
+/** Liest `em_data.csv` des Shelly EM / 3EM (Gen1). Kopfzeile:
+ *  `Date/time UTC,Active energy Wh,Returned energy Wh,Min V,Max V`; je Zeile
+ *  ein 10-Minuten-Fenster. Unlesbare Zeilen werden übersprungen. */
+export function parseEmCsv(text: string): EnergyRecord[] {
+  const out: EnergyRecord[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}),\s*(-?[\d.]+)/.exec(line);
+    if (!m) continue;
+    const t = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]);
+    const wh = Number(m[6]);
+    if (Number.isFinite(t) && Number.isFinite(wh)) out.push({ t, wh });
+  }
+  return out;
+}
+
+/** "1.234 kWh" für große, "4,2 kWh" für kleine Werte (deutsches Format). */
+export function formatKwhDe(wh: number): string {
+  const kwh = wh / 1000;
+  const digits = kwh >= 1000 ? 0 : kwh >= 100 ? 0 : kwh >= 10 ? 1 : 2;
+  const [int, frac] = kwh.toFixed(digits).split('.');
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${grouped}${frac ? ',' + frac : ''} kWh`;
+}

@@ -1,8 +1,8 @@
 {
   "id": "shelly-power",
   "name": "Stromverbrauch (Shelly)",
-  "version": "0.2.1",
-  "description": "Aktueller Stromverbrauch der Wohnung aus Shelly-Geräten im lokalen Netz: Gesamtleistung mit Verlauf, Tagesverbrauch, Einzelverbraucher und Schaltzustand von Shellys ohne Messung",
+  "version": "0.3.0",
+  "description": "Stromverbrauch der Wohnung aus Shelly-Geräten im lokalen Netz: aktuelle Leistung mit Verlauf, Verbrauch heute/Woche/Monat/Jahr (aus dem Speicher des Shelly EM), Einzelverbraucher und Schaltzustand von Shellys ohne Messung",
   "author": "Gyrosguenter",
   "license": "MIT",
   "minAppVersion": "1.0.0",
@@ -12,11 +12,14 @@
   "defaultConfig": {
     "title": "Strom",
     "devices": "Gesamt | 192.168.1.20 | 1\nHerd | 192.168.1.21",
-    "refreshIntervalMs": 10000
+    "refreshIntervalMs": 10000,
+    "showPeriods": true,
+    "pricePerKwh": 0,
+    "historySeed": ""
   },
   "defaultSize": {
     "w": 440,
-    "h": 700
+    "h": 900
   },
   "defaultStyle": {
     "padding": 20,
@@ -39,6 +42,23 @@
         "ui:widget": "text",
         "ui:group": "Geräte"
       },
+      "showPeriods": {
+        "type": "boolean",
+        "title": "Verbrauch heute / Woche / Monat / Jahr zeigen",
+        "description": "Funktioniert, wenn das erste Gerät ein Shelly EM (Gen1) ist: Er speichert den Verbrauch selbst, es gibt also auch rückwirkend Werte.",
+        "ui:widget": "toggle",
+        "ui:group": "Anzeige"
+      },
+      "pricePerKwh": {
+        "type": "number",
+        "title": "Strompreis (€ je kWh)",
+        "description": "Optional, z. B. 0.32. Zeigt unter den Verbrauchswerten eine grobe Kostenschätzung. 0 = keine Kosten zeigen.",
+        "minimum": 0,
+        "maximum": 2,
+        "ui:widget": "text",
+        "ui:placeholder": "0.32",
+        "ui:group": "Anzeige"
+      },
       "refreshIntervalMs": {
         "type": "number",
         "title": "Aktualisierung (ms)",
@@ -47,6 +67,13 @@
         "ui:widget": "slider",
         "ui:step": 5000,
         "ui:group": "Anzeige"
+      },
+      "historySeed": {
+        "type": "string",
+        "title": "Importierter Verlauf (optional)",
+        "description": "Nur für Fortgeschrittene: Verbrauch früherer Tage als JSON {\"d\":{\"2026-02-10\":5321.5,…},\"c\":{\"2026-10-14\":10495000}}, damit Woche/Monat/Jahr sofort stimmen. Leer lassen, wenn du keinen Verlauf importieren willst.",
+        "ui:widget": "text",
+        "ui:group": "Erweitert"
       }
     }
   },
