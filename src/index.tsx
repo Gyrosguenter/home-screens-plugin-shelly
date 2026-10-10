@@ -2,6 +2,7 @@ import React from 'react';
 import type { PluginComponentProps } from './hs-plugin';
 import { hostFrameStyle } from './host-style';
 import {
+  gen1HasMeter,
   formatKwh,
   formatPower,
   parseDevices,
@@ -27,7 +28,10 @@ type PluginFetch = (
 ) => Promise<Response>;
 
 // Modulweit: übersteht Screenwechsel (das Modul wird dabei neu eingehängt).
-const generations = new Map<string, number>();
+const generations = new Map<string, { gen: number; hasMeter: boolean }>();
+/** Geräte, die schon einmal ohne Leistungsmessung geantwortet haben — damit
+ *  sie auch bei einem Ausfall unter "Schalter" bleiben statt zwischen den Messwerten. */
+const switchOnly = new Set<string>();
 const histories = new Map<string, number[]>();
 
 const keyOf = (d: DeviceSpec) => `${d.host}#${d.channel}`;
@@ -54,17 +58,18 @@ async function readDevice(spec: DeviceSpec, cacheMs: number): Promise<Reading> {
   const pluginFetch = window.__HS_SDK__?.pluginFetch as PluginFetch | undefined;
   if (!pluginFetch) throw new Error('SDK nicht verfügbar');
 
-  let gen = generations.get(spec.host);
-  if (gen === undefined) {
+  let known = generations.get(spec.host);
+  if (known === undefined) {
     const info = await pluginFetch(PLUGIN_ID, { url: `http://${spec.host}/shelly`, cacheTtlMs: 60 * 60 * 1000 });
     if (!info.ok) throw new Error(`HTTP ${info.status}`);
-    gen = parseGeneration(await info.json());
-    generations.set(spec.host, gen);
+    const body = await info.json();
+    known = { gen: parseGeneration(body), hasMeter: gen1HasMeter(body) };
+    generations.set(spec.host, known);
   }
-  const url = gen >= 2 ? `http://${spec.host}/rpc/Shelly.GetStatus` : `http://${spec.host}/status`;
+  const url = known.gen >= 2 ? `http://${spec.host}/rpc/Shelly.GetStatus` : `http://${spec.host}/status`;
   const res = await pluginFetch(PLUGIN_ID, { url, cacheTtlMs: cacheMs });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const reading = parseStatus(gen, await res.json(), spec.channel);
+  const reading = parseStatus(known.gen, await res.json(), spec.channel, known.hasMeter);
   if (!reading) throw new Error('Kein Messwert');
   return reading;
 }
@@ -112,9 +117,14 @@ function usePower(devices: DeviceSpec[], refreshMs: number): State {
         const key = keyOf(specs[i]);
         if (r.status === 'fulfilled') {
           readings[key] = r.value;
-          const next = pushHistory(histories.get(key) ?? loadHistory(key), r.value.watts, HISTORY_POINTS);
-          histories.set(key, next);
-          if (i === 0) saveHistory(key, next);
+          if (r.value.watts === null) {
+            switchOnly.add(key);
+          } else {
+            switchOnly.delete(key);
+            const next = pushHistory(histories.get(key) ?? loadHistory(key), r.value.watts, HISTORY_POINTS);
+            histories.set(key, next);
+            if (i === 0) saveHistory(key, next);
+          }
         } else {
           readings[key] = null;
         }
@@ -205,12 +215,16 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
   const state = usePower(devices, refreshMs);
 
   const main = devices[0];
-  const rest = devices.slice(1);
+  const others = devices.slice(1);
+  // Geräte ohne Leistungsmessung (nur An/Aus) getrennt von den Messwerten.
+  const rest = others.filter((d) => !switchOnly.has(keyOf(d)));
+  const switches = others.filter((d) => switchOnly.has(keyOf(d)));
   const mainReading = main ? state.readings[keyOf(main)] : null;
+  const mainWatts = mainReading?.watts ?? null;
   const loaded = state.updatedAt !== null;
   const sum = rest.reduce((acc, d) => acc + (state.readings[keyOf(d)]?.watts ?? 0), 0);
-  const other = mainReading && rest.length > 0 ? mainReading.watts - sum : null;
-  const barMax = Math.max(mainReading?.watts ?? 0, sum, 1);
+  const other = mainWatts !== null && rest.length > 0 ? mainWatts - sum : null;
+  const barMax = Math.max(mainWatts ?? 0, sum, 1);
   const accent = PALETTE[0];
 
   return (
@@ -226,7 +240,7 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: '0.8em', opacity: 0.6 }}>{main.name} jetzt</div>
           <div style={{ fontSize: '3em', fontWeight: 300, lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
-            {mainReading ? formatPower(mainReading.watts) : loaded ? '–' : '…'}
+            {mainWatts !== null ? formatPower(mainWatts) : loaded ? '–' : '…'}
           </div>
           {state.today && (state.today.since === null || Date.now() - state.today.since >= 30 * 60 * 1000) && (
             <div style={{ fontSize: '0.85em', opacity: 0.75, marginTop: '0.2em' }}>
@@ -259,6 +273,45 @@ export default function ShellyPowerPlugin({ config, style }: PluginComponentProp
           <Row name="Übrige Verbraucher" watts={other} max={barMax} color="rgba(255,255,255,0.45)" dim />
         )}
       </div>
+
+      {switches.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.45em',
+            paddingTop: '0.6em',
+            borderTop: '1px solid rgba(255,255,255,0.1)',
+          }}
+        >
+          <span style={{ fontSize: '0.7em', opacity: 0.55, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+            Weitere Shellys
+          </span>
+          {switches.map((d) => {
+            const reading = state.readings[keyOf(d)];
+            const on = reading ? reading.on : null;
+            return (
+              <div key={keyOf(d)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.5em' }}>
+                <span style={{ fontSize: '0.95em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {d.name}
+                </span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4em', fontSize: '0.9em', opacity: 0.9 }}>
+                  <span
+                    style={{
+                      width: '0.55em',
+                      height: '0.55em',
+                      borderRadius: '50%',
+                      background: on === null ? 'rgba(255,255,255,0.3)' : on ? '#34d399' : 'rgba(255,255,255,0.35)',
+                      boxShadow: on ? '0 0 0.5em #34d399' : 'none',
+                    }}
+                  />
+                  {on === null ? '–' : on ? 'An' : 'Aus'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 {
   "id": "shelly-power",
   "name": "Stromverbrauch (Shelly)",
-  "version": "0.1.4",
-  "description": "Aktueller Stromverbrauch der Wohnung aus Shelly-Messgeräten im lokalen Netz: Gesamtleistung mit Verlauf, Tagesverbrauch und Einzelverbraucher",
+  "version": "0.2.0",
+  "description": "Aktueller Stromverbrauch der Wohnung aus Shelly-Geräten im lokalen Netz: Gesamtleistung mit Verlauf, Tagesverbrauch, Einzelverbraucher und Schaltzustand von Shellys ohne Messung",
   "author": "Gyrosguenter",
   "license": "MIT",
   "minAppVersion": "1.0.0",
@@ -64,6 +64,9 @@
     "192.168.27.124",
     "192.168.27.138",
     "192.168.27.193",
-    "192.168.27.172"
+    "192.168.27.172",
+    "192.168.27.160",
+    "192.168.27.191",
+    "192.168.27.194"
   ]
 }

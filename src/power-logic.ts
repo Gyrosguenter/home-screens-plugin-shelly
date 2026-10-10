@@ -7,10 +7,12 @@ export interface DeviceSpec {
 }
 
 export interface Reading {
-  /** Aktuelle Leistung in Watt (negativ = Einspeisung). */
-  watts: number;
+  /** Aktuelle Leistung in Watt (negativ = Einspeisung); null bei Geräten ohne Messung. */
+  watts: number | null;
   /** Zählerstand in Wattstunden, falls das Gerät ihn liefert. */
   totalWh: number | null;
+  /** Schaltzustand (An/Aus), falls das Gerät ein Relais hat. */
+  on: boolean | null;
 }
 
 const HOST_RE = /^[A-Za-z0-9.-]+(:\d{1,5})?$/;
@@ -47,43 +49,59 @@ function obj(v: unknown): Obj | null {
 export function parseGen2(status: unknown, channel: number): Reading | null {
   const s = obj(status);
   if (!s) return null;
+  const sw = obj(s[`switch:${channel}`]);
+  const on = sw && typeof sw.output === 'boolean' ? sw.output : null;
   for (const key of ['pm1', 'switch', 'cover', 'pm']) {
     const c = obj(s[`${key}:${channel}`]);
     const watts = c ? num(c.apower) : null;
     if (c && watts !== null) {
       const energy = obj(c.aenergy);
-      return { watts, totalWh: energy ? num(energy.total) : null };
+      return { watts, totalWh: energy ? num(energy.total) : null, on };
     }
   }
   const em1 = obj(s[`em1:${channel}`]);
   if (em1 && num(em1.act_power) !== null) {
     const data = obj(s[`em1data:${channel}`]);
-    return { watts: em1.act_power as number, totalWh: data ? num(data.total_act_energy) : null };
+    return { watts: em1.act_power as number, totalWh: data ? num(data.total_act_energy) : null, on };
   }
   const em = obj(s[`em:${channel}`]);
   if (em && num(em.total_act_power) !== null) {
     const data = obj(s[`emdata:${channel}`]);
-    return { watts: em.total_act_power as number, totalWh: data ? num(data.total_act) : null };
+    return { watts: em.total_act_power as number, totalWh: data ? num(data.total_act) : null, on };
   }
+  // Schalter ohne Leistungsmessung (z. B. Plus 1): nur der Schaltzustand.
+  if (on !== null) return { watts: null, totalWh: null, on };
   return null;
 }
 
 /** Gen1 (Shelly EM, 1PM, 3EM …): Antwort von `/status`. */
-export function parseGen1(status: unknown, channel: number): Reading | null {
+export function parseGen1(status: unknown, channel: number, hasMeter = true): Reading | null {
   const s = obj(status);
   if (!s) return null;
-  for (const key of ['emeters', 'meters']) {
-    const list = s[key];
-    if (!Array.isArray(list)) continue;
-    const c = obj(list[channel]);
-    const watts = c ? num(c.power) : null;
-    if (c && watts !== null) return { watts, totalWh: num(c.total) };
+  const relays = Array.isArray(s.relays) ? s.relays : [];
+  const relay = obj(relays[channel]);
+  const on = relay && typeof relay.ison === 'boolean' ? relay.ison : null;
+  if (hasMeter) {
+    for (const key of ['emeters', 'meters']) {
+      const list = s[key];
+      if (!Array.isArray(list)) continue;
+      const c = obj(list[channel]);
+      const watts = c ? num(c.power) : null;
+      if (c && watts !== null) return { watts, totalWh: num(c.total), on };
+    }
   }
+  // Schalter ohne Messung (Shelly 1 meldet zwar `meters`, aber nur Nullen).
+  if (on !== null) return { watts: null, totalWh: null, on };
   return null;
 }
 
-export function parseStatus(gen: number, status: unknown, channel: number): Reading | null {
-  return gen >= 2 ? parseGen2(status, channel) : parseGen1(status, channel);
+export function parseStatus(
+  gen: number,
+  status: unknown,
+  channel: number,
+  hasMeter = true,
+): Reading | null {
+  return gen >= 2 ? parseGen2(status, channel) : parseGen1(status, channel, hasMeter);
 }
 
 /** Generation aus der Antwort von `/shelly` (Gen1 hat kein `gen`-Feld). */
@@ -91,6 +109,14 @@ export function parseGeneration(info: unknown): number {
   const o = obj(info);
   const gen = o ? num(o.gen) : null;
   return gen && gen >= 2 ? gen : 1;
+}
+
+/** Hat ein Gen1-Gerät überhaupt einen Leistungsmesser? `/shelly` nennt dann
+ *  `num_meters` bzw. `num_emeters` größer 0. */
+export function gen1HasMeter(info: unknown): boolean {
+  const o = obj(info);
+  if (!o) return true;
+  return (num(o.num_meters) ?? 0) > 0 || (num(o.num_emeters) ?? 0) > 0;
 }
 
 /** "676 W" bzw. "1,24 kW". */
