@@ -1,7 +1,7 @@
 {
   "id": "shelly-power",
   "name": "Stromverbrauch (Shelly)",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Aktueller Stromverbrauch der Wohnung aus Shelly-Messgeräten im lokalen Netz: Gesamtleistung mit Verlauf, Tagesverbrauch und Einzelverbraucher",
   "author": "Gyrosguenter",
   "license": "MIT",
@@ -9,21 +9,20 @@
   "moduleType": "shelly-power",
   "category": "Smart Home",
   "icon": "Zap",
-
   "defaultConfig": {
     "title": "Strom",
     "devices": "Gesamt | 192.168.1.20 | 1\nHerd | 192.168.1.21",
     "refreshIntervalMs": 10000
   },
-
-  "defaultSize": { "w": 440, "h": 700 },
-
+  "defaultSize": {
+    "w": 440,
+    "h": 700
+  },
   "defaultStyle": {
     "padding": 20,
     "fontSize": 22,
     "backgroundColor": "rgba(15, 23, 42, 0.3)"
   },
-
   "configSchema": {
     "type": "object",
     "properties": {
@@ -51,13 +50,19 @@
       }
     }
   },
-
   "exports": {
     "component": "default"
   },
-
   "dataRequirements": [],
   "prefetchUrl": null,
-  "permissions": ["network", "localNetwork"],
-  "allowedDomains": ["192.168.*"]
+  "permissions": [
+    "network",
+    "localNetwork"
+  ],
+  "allowedDomains": [
+    "192.168.27.198",
+    "192.168.27.124",
+    "192.168.27.138",
+    "192.168.27.193"
+  ]
 }

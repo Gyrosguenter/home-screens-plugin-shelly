@@ -6,7 +6,7 @@ Teil des Projekts [home-screens-magic-mirror](https://github.com/Gyrosguenter/ho
 
 ## Geräte
 
-Im Editor beim Modul unter „Geräte“, eine Zeile je Messpunkt: `Name | IP-Adresse | Kanal`. Die erste Zeile ist der Gesamtverbrauch. Unterstützt Gen1 (z. B. Shelly EM, 1PM) und Gen2+ (Plus/Pro, PM Mini); die Generation wird über `/shelly` erkannt. Die Abfragen laufen über den Server-Proxy des Hubs (Berechtigung `localNetwork`), nicht direkt aus dem Browser, weil dessen CSP lokale HTTP-Adressen blockiert.
+Im Editor beim Modul unter „Geräte“, eine Zeile je Messpunkt: `Name | IP-Adresse | Kanal`. Die erste Zeile ist der Gesamtverbrauch. Unterstützt Gen1 (z. B. Shelly EM, 1PM) und Gen2+ (Plus/Pro, PM Mini); die Generation wird über `/shelly` erkannt. Die Abfragen laufen über den Server-Proxy des Hubs (Berechtigung `localNetwork`), nicht direkt aus dem Browser, weil dessen CSP lokale HTTP-Adressen blockiert. Der Proxy erlaubt nur Adressen aus `allowedDomains` im Manifest (Platzhalter für IP-Bereiche gehen nicht): neue Geräte müssen dort ergänzt werden.
 
 Voraussetzung: Die Shelly-Geräte sind ohne Passwort im LAN erreichbar (Authentifizierung wird nicht unterstützt).
 
