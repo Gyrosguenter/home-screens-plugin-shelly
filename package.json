@@ -1,0 +1,20 @@
+{
+  "name": "hs-plugin-shelly-power",
+  "version": "0.1.0",
+  "description": "Home Screens plugin: Shelly power meters",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite build && (vite build --watch & npx -y serve@latest . -l 5177 --cors --no-clipboard)",
+    "build": "vite build",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "shelly-power",
+  "name": "Stromverbrauch (Shelly)",
+  "version": "0.1.0",
+  "description": "Aktueller Stromverbrauch der Wohnung aus Shelly-Messgeräten im lokalen Netz: Gesamtleistung mit Verlauf, Tagesverbrauch und Einzelverbraucher",
+  "author": "Gyrosguenter",
+  "license": "MIT",
+  "minAppVersion": "1.0.0",
+  "moduleType": "shelly-power",
+  "category": "Smart Home",
+  "icon": "Zap",
+
+  "defaultConfig": {
+    "title": "Strom",
+    "devices": "Gesamt | 192.168.1.20 | 1\nHerd | 192.168.1.21",
+    "refreshIntervalMs": 10000
+  },
+
+  "defaultSize": { "w": 440, "h": 700 },
+
+  "defaultStyle": {
+    "padding": 20,
+    "fontSize": 22,
+    "backgroundColor": "rgba(15, 23, 42, 0.3)"
+  },
+
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "title": {
+        "type": "string",
+        "title": "Titel",
+        "ui:widget": "text",
+        "ui:group": "Anzeige"
+      },
+      "devices": {
+        "type": "string",
+        "title": "Geräte",
+        "description": "Eine Zeile je Messpunkt: Name | IP-Adresse | Kanal (Kanal nur bei Geräten mit mehreren Messkanälen, z. B. Shelly EM). Die erste Zeile ist der Gesamtverbrauch, die weiteren werden als Einzelverbraucher darunter gezeigt.",
+        "ui:widget": "text",
+        "ui:group": "Geräte"
+      },
+      "refreshIntervalMs": {
+        "type": "number",
+        "title": "Aktualisierung (ms)",
+        "minimum": 5000,
+        "maximum": 60000,
+        "ui:widget": "slider",
+        "ui:step": 5000,
+        "ui:group": "Anzeige"
+      }
+    }
+  },
+
+  "exports": {
+    "component": "default"
+  },
+
+  "dataRequirements": [],
+  "prefetchUrl": null,
+  "permissions": ["network", "localNetwork"],
+  "allowedDomains": ["192.168.*"]
+}
